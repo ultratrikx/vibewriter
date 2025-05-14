@@ -241,6 +241,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
         }
 
+        case "TOGGLE_SIDEBAR": {
+            console.log("Background handling TOGGLE_SIDEBAR request");
+            // Get the active tab and send the toggle message to it
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs.length > 0 && tabs[0].id) {
+                    console.log(
+                        "Sending TOGGLE_SIDEBAR message to content script in tab:",
+                        tabs[0].id
+                    );
+                    chrome.tabs.sendMessage(
+                        tabs[0].id,
+                        { type: "TOGGLE_SIDEBAR" },
+                        (response) => {
+                            console.log("Toggle sidebar response:", response);
+                            sendResponse(response || { success: true });
+                        }
+                    );
+                } else {
+                    console.error("No active tab found");
+                    sendResponse({
+                        success: false,
+                        error: "Could not find active tab",
+                    });
+                }
+            });
+            return true;
+        }
+
         case "OLLAMA_API_REQUEST": {
             console.log("Processing Ollama API request in background");
 

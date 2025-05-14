@@ -132,6 +132,14 @@ function addVibeWriteUI() {
                 readyState:
                     sidebarIframe.contentDocument?.readyState || "unknown",
             });
+
+            // Send a ready message to the sidebar
+            if (sidebarIframe.contentWindow) {
+                sidebarIframe.contentWindow.postMessage(
+                    { type: "SIDEBAR_READY" },
+                    "*"
+                );
+            }
         });
 
         // Add VibeWrite buttons to the Google Docs toolbar
@@ -188,31 +196,83 @@ function addVibeWriteUI() {
 
 // Function to toggle the sidebar
 function toggleSidebar() {
-    const sidebar = document.getElementById("vibewrite-sidebar");
+    let sidebar = document.getElementById("vibewrite-sidebar");
+
+    // If sidebar doesn't exist, create it first
+    if (!sidebar) {
+        debugLog("Sidebar not found, creating it first");
+        try {
+            addVibeWriteUI();
+            sidebar = document.getElementById("vibewrite-sidebar");
+            debugLog("Sidebar created successfully:", sidebar);
+        } catch (error) {
+            debugLog("Error creating sidebar:", error);
+            // Show an alert to the user that something went wrong
+            alert(
+                "VibeWrite: Could not create sidebar. Please reload the page and try again."
+            );
+        }
+    }
+
     if (sidebar) {
+        const isCurrentlyOpen = sidebar.classList.contains("open");
         sidebar.classList.toggle("open");
+        debugLog(`Sidebar ${isCurrentlyOpen ? "closed" : "opened"}`);
+
+        // Force a redraw to ensure the sidebar appears
+        sidebar.style.display = "none";
+        sidebar.offsetHeight; // Force a reflow
+        sidebar.style.display = "flex";
+
+        return true;
+    } else {
+        debugLog("Failed to find or create sidebar");
+        return false;
     }
 }
 
 // Function to analyze the document and show suggestions
 function analyzeDocument() {
-    // Make sure the sidebar is open
+    // Make sure the sidebar is created and opened first
     const sidebar = document.getElementById("vibewrite-sidebar");
-    if (sidebar && !sidebar.classList.contains("open")) {
-        sidebar.classList.add("open");
+    if (!sidebar) {
+        debugLog("Sidebar not found, creating it first");
+        addVibeWriteUI();
+    }
+
+    // Now get the sidebar (whether it existed before or was just created)
+    const sidebarElement = document.getElementById("vibewrite-sidebar");
+    if (sidebarElement && !sidebarElement.classList.contains("open")) {
+        sidebarElement.classList.add("open");
+
+        // Force a redraw
+        sidebarElement.style.display = "none";
+        sidebarElement.offsetHeight; // Force a reflow
+        sidebarElement.style.display = "flex";
     }
 
     // Send the analyze message directly to the sidebar iframe
-    const sidebarIframe = document.querySelector("#vibewrite-sidebar iframe");
-    if (sidebarIframe) {
+    const sidebarIframe = document.getElementById(
+        "vibewrite-sidebar-iframe"
+    ) as HTMLIFrameElement;
+    if (sidebarIframe?.contentWindow) {
         debugLog("Sending ANALYZE_DOCUMENT to sidebar iframe");
-        (sidebarIframe as HTMLIFrameElement).contentWindow?.postMessage(
+        sidebarIframe.contentWindow.postMessage(
             { type: "ANALYZE_DOCUMENT" },
             "*"
         );
     } else {
-        debugLog("Could not find sidebar iframe");
-        // Fallback to sending via chrome runtime messaging
+        debugLog("Could not find sidebar iframe, trying broadcast");
+        // Broadcast the message to any window that might be listening
+        window.postMessage(
+            {
+                type: "ANALYZE_DOCUMENT",
+                source: "content-script",
+            },
+            "*"
+        );
+
+        // Also try via chrome runtime messaging as final fallback
         chrome.runtime.sendMessage({ type: "ANALYZE_DOCUMENT" });
     }
 }
@@ -332,6 +392,11 @@ function setupMessageHandlers() {
                             error: "Failed to relay document content",
                         });
                     }
+                    break;
+                case "TOGGLE_SIDEBAR":
+                    debugLog("Toggling sidebar visibility");
+                    toggleSidebar();
+                    sendResponse({ success: true });
                     break;
                 default:
                     debugLog("Unknown message type:", message.type);

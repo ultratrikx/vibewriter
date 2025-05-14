@@ -155,7 +155,6 @@ const Popup: React.FC = () => {
             setStatus({ message: "Failed to save API key", type: "error" });
         }
     };
-
     const toggleSidebar = async () => {
         try {
             const [tab] = await chrome.tabs.query({
@@ -164,7 +163,28 @@ const Popup: React.FC = () => {
             });
 
             if (tab.id) {
-                chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_SIDEBAR" });
+                // Check if we're on a Google Docs page
+                if (tab.url?.includes("docs.google.com/document")) {
+                    // Use background script to relay the toggle message
+                    chrome.runtime.sendMessage(
+                        { type: "TOGGLE_SIDEBAR" },
+                        (response) => {
+                            if (!response || !response.success) {
+                                setStatus({
+                                    message:
+                                        "Could not toggle sidebar. Please try reloading the page.",
+                                    type: "error",
+                                });
+                            }
+                        }
+                    );
+                } else {
+                    setStatus({
+                        message:
+                            "Please navigate to a Google Docs document first",
+                        type: "error",
+                    });
+                }
             }
         } catch (error) {
             console.error("Error toggling sidebar:", error);
