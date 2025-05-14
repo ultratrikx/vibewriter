@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            http-equiv="Permissions-Policy"
+            content="interest-cohort=(), browsing-topics=()"
+        />
+        <title>VibeWrite Sidebar</title>
+        <style>
+            body {
+                font-family: "Segoe UI", "Roboto", Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                background-color: white;
+                color: #202124;
+            }
+
+            .sidebar-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+            }
+
+            .sidebar-header {
+                padding: 12px 16px;
+                border-bottom: 1px solid #e0e0e0;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+
+            .sidebar-header h1 {
+                font-size: 16px;
+                margin: 0;
+                color: #1a73e8;
+            }
+
+            .sidebar-tabs {
+                display: flex;
+                border-bottom: 1px solid #e0e0e0;
+            }
+
+            .tab {
+                padding: 8px 16px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+                flex: 1;
+                text-align: center;
+            }
+
+            .tab.active {
+                color: #1a73e8;
+                border-bottom: 2px solid #1a73e8;
+            }
+
+            .sidebar-content {
+                flex: 1;
+                overflow-y: auto;
+                padding: 16px;
+            }
+
+            .sidebar-footer {
+                padding: 8px 16px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #5f6368;
+                text-align: center;
+            }
+
+            /* Chat UI */
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+            }
+
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 8px;
+            }
+
+            .message {
+                margin-bottom: 12px;
+                max-width: 85%;
+            }
+
+            .message.user {
+                margin-left: auto;
+                background-color: #e3f2fd;
+                border-radius: 12px 12px 0 12px;
+                padding: 8px 12px;
+            }
+
+            .message.assistant {
+                margin-right: auto;
+                background-color: #f5f5f5;
+                border-radius: 12px 12px 12px 0;
+                padding: 8px 12px;
+            }
+
+            .message-content {
+                font-size: 14px;
+                line-height: 1.4;
+            }
+
+            .message-time {
+                font-size: 10px;
+                color: #757575;
+                text-align: right;
+                margin-top: 4px;
+            }
+
+            .chat-input {
+                padding: 8px;
+                border-top: 1px solid #e0e0e0;
+            }
+
+            .chat-input-box {
+                display: flex;
+            }
+
+            .chat-input-box textarea {
+                flex: 1;
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 18px;
+                font-size: 14px;
+                resize: none;
+                height: 40px;
+                max-height: 100px;
+                outline: none;
+                font-family: inherit;
+            }
+
+            .chat-input-box button {
+                margin-left: 8px;
+                background-color: #1a73e8;
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+            .chat-input-box button:hover {
+                background-color: #1765cc;
+            }
+
+            /* Suggestions UI */
+            .suggestions-container {
+                padding: 8px;
+            }
+
+            .suggestion-card {
+                background-color: #f8f9fa;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 12px;
+                border-left: 4px solid #1a73e8;
+            }
+
+            .suggestion-title {
+                font-size: 14px;
+                font-weight: 500;
+                margin-bottom: 8px;
+            }
+
+            .suggestion-content {
+                font-size: 14px;
+                margin-bottom: 8px;
+            }
+
+            .suggestion-reason {
+                font-size: 12px;
+                color: #5f6368;
+                font-style: italic;
+            }
+
+            .suggestion-actions {
+                display: flex;
+                justify-content: flex-end;
+                margin-top: 8px;
+            }
+
+            .suggestion-actions button {
+                background: none;
+                border: none;
+                font-size: 12px;
+                color: #1a73e8;
+                cursor: pointer;
+                padding: 4px 8px;
+                margin-left: 8px;
+            }
+
+            .suggestion-actions button:hover {
+                text-decoration: underline;
+            }
+
+            /* Loading indicator */
+            .loading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+
+            .spinner {
+                width: 24px;
+                height: 24px;
+                border: 3px solid #e0e0e0;
+                border-top: 3px solid #1a73e8;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script src="sidebar.js"></script>
+    </body>
+</html>

@@ -1,0 +1,405 @@
+import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom/client";
+import { AIService, StorageService, AIModelConfig } from "../utils/services";
+import { ChatMessage, WritingSuggestion } from "../utils/types";
+import { GoogleDocsAPI } from "../utils/google-docs-api";
+
+// Component for a single chat message
+const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
+    const formatTime = (timestamp: number) => {
+        const date = new Date(timestamp);
+        return `${date.getHours()}:${date
+            .getMinutes()
+            .toString()
+            .padStart(2, "0")}`;
+    };
+
+    return (
+        <div
+            className={`message ${
+                message.role === "user" ? "user" : "assistant"
+            }`}
+        >
+            <div className="message-content">{message.content}</div>
+            <div className="message-time">{formatTime(message.timestamp)}</div>
+        </div>
+    );
+};
+
+// Component for a single writing suggestion
+const SuggestionCard: React.FC<{
+    suggestion: WritingSuggestion;
+    onApply: (suggestion: WritingSuggestion) => void;
+    onDismiss: (id: string) => void;
+}> = ({ suggestion, onApply, onDismiss }) => {
+    return (
+        <div className="suggestion-card">
+            <div className="suggestion-title">Suggested Improvement</div>
+            <div className="suggestion-content">
+                <strong>Original:</strong> "{suggestion.originalText}"
+            </div>
+            <div className="suggestion-content">
+                <strong>Suggestion:</strong> "{suggestion.suggestion}"
+            </div>
+            <div className="suggestion-reason">{suggestion.reason}</div>
+            <div className="suggestion-actions">
+                <button onClick={() => onDismiss(suggestion.id)}>
+                    Dismiss
+                </button>
+                <button onClick={() => onApply(suggestion)}>Apply</button>
+            </div>
+        </div>
+    );
+};
+
+// Loading spinner component
+const Loading: React.FC = () => (
+    <div className="loading">
+        <div className="spinner"></div>
+    </div>
+);
+
+// Main Sidebar component
+const Sidebar: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<"chat" | "suggestions">("chat");
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    const [suggestions, setSuggestions] = useState<WritingSuggestion[]>([]);
+    const [inputText, setInputText] = useState<string>("");
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [apiKey, setApiKey] = useState<string>("");    const chatMessagesRef = useRef<HTMLDivElement>(null);
+    const aiService = useRef<AIService>(new AIService());
+    const storageService = new StorageService();
+
+    // Load the API settings when the sidebar is opened
+    useEffect(() => {
+        const loadAISettings = async () => {
+            const aiSettings = await storageService.getAISettings();
+            if ((aiSettings.provider === "openai" && aiSettings.apiKey) || aiSettings.provider === "ollama") {
+                setApiKey(aiSettings.apiKey || "");
+                aiService.current.initClient(aiSettings);
+
+                // Add a welcome message
+                const welcomeMessage: ChatMessage = {
+                    id: Date.now().toString(),
+                    role: "assistant",
+                    content:
+                        "Hello! I'm your writing assistant. How can I help you with your document today?",
+                    timestamp: Date.now(),
+                };
+
+                setChatMessages([welcomeMessage]);
+            }
+        };
+
+        loadAISettings();
+
+        // Set up message listener
+        const messageListener = (message: any) => {
+            if (message.type === "ANALYZE_DOCUMENT") {
+                analyzeDocument();
+            }
+        };
+
+        chrome.runtime.onMessage.addListener(messageListener);
+
+        return () => {
+            chrome.runtime.onMessage.removeListener(messageListener);
+        };
+    }, []);
+
+    // Scroll to bottom of chat when messages change
+    useEffect(() => {
+        if (chatMessagesRef.current) {
+            chatMessagesRef.current.scrollTop =
+                chatMessagesRef.current.scrollHeight;
+        }
+    }, [chatMessages]);
+
+    // Send a message in the chat
+    const sendMessage = async () => {
+        if (!inputText.trim() || !apiKey) return;
+
+        // Add the user message to the chat
+        const userMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: "user",
+            content: inputText,
+            timestamp: Date.now(),
+        };
+
+        setChatMessages((prevMessages) => [...prevMessages, userMessage]);
+        setInputText("");
+        setIsLoading(true);
+
+        try {
+            // Get context from the document
+            const documentContent = GoogleDocsAPI.getDocumentContent();
+            const selectedText = GoogleDocsAPI.getSelectedText();
+
+            // Construct prompt with context
+            const prompt = `
+        User message: ${inputText}
+        
+        ${selectedText ? `Selected text in document: ${selectedText}\n\n` : ""}
+        
+        ${
+            documentContent
+                ? `Context from document: ${documentContent.substring(
+                      0,
+                      1000
+                  )}...\n\n`
+                : ""
+        }
+        
+        Please provide helpful writing advice based on this context.
+      `;
+
+            // Generate AI response
+            const aiResponse = await openaiService.current.generateCompletion(
+                prompt
+            );
+
+            if (aiResponse.error) {
+                throw new Error(aiResponse.error);
+            }
+
+            // Add the AI response to the chat
+            const assistantMessage: ChatMessage = {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: aiResponse.text,
+                timestamp: Date.now(),
+            };
+
+            setChatMessages((prevMessages) => [
+                ...prevMessages,
+                assistantMessage,
+            ]);
+        } catch (error) {
+            console.error("Failed to send message:", error);
+
+            // Add an error message to the chat
+            const errorMessage: ChatMessage = {
+                id: Date.now().toString(),
+                role: "assistant",
+                content:
+                    "Sorry, I encountered an error processing your request. Please check your API key or try again later.",
+                timestamp: Date.now(),
+            };
+
+            setChatMessages((prevMessages) => [...prevMessages, errorMessage]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Analyze the document to generate suggestions
+    const analyzeDocument = async () => {
+        if (!apiKey) return;
+
+        setActiveTab("suggestions");
+        setIsLoading(true);
+
+        try {
+            const documentContent = GoogleDocsAPI.getDocumentContent();
+            if (!documentContent) {
+                throw new Error("Could not retrieve document content");
+            }
+
+            // Generate suggestions by sending content to OpenAI
+            const prompt = `
+        Please review the following text and provide 3 specific writing suggestions for improvement.
+        Format your response as a JSON array with objects containing:
+        1. originalText - The exact text to improve (keep it brief, under 20 words)
+        2. suggestion - Your suggested improvement
+        3. reason - A brief explanation why this is better
+        
+        Here's the text to analyze:
+        ${documentContent.substring(0, 3000)}
+      `;
+
+            const aiResponse = await openaiService.current.generateCompletion(
+                prompt
+            );
+
+            if (aiResponse.error) {
+                throw new Error(aiResponse.error);
+            }
+
+            // Parse the JSON response
+            try {
+                const suggestionsData = JSON.parse(aiResponse.text);
+                const formattedSuggestions: WritingSuggestion[] =
+                    suggestionsData.map((item: any) => ({
+                        id:
+                            Date.now().toString() +
+                            Math.random().toString(36).substring(2, 9),
+                        originalText: item.originalText,
+                        suggestion: item.suggestion,
+                        reason: item.reason,
+                        timestamp: Date.now(),
+                    }));
+
+                setSuggestions(formattedSuggestions);
+            } catch (error) {
+                console.error("Failed to parse suggestions:", error);
+                setSuggestions([]);
+            }
+        } catch (error) {
+            console.error("Failed to analyze document:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Apply a suggestion by adding a comment to the document
+    const applySuggestion = (suggestion: WritingSuggestion) => {
+        const commentText = `Suggestion: "${suggestion.suggestion}"\n\nReason: ${suggestion.reason}`;
+
+        // Add the comment to the document
+        const success = GoogleDocsAPI.addComment(commentText);
+
+        if (success) {
+            // Remove the suggestion from the list
+            setSuggestions((prevSuggestions) =>
+                prevSuggestions.filter((s) => s.id !== suggestion.id)
+            );
+        }
+    };
+
+    // Dismiss a suggestion
+    const dismissSuggestion = (id: string) => {
+        setSuggestions((prevSuggestions) =>
+            prevSuggestions.filter((s) => s.id !== id)
+        );
+    };
+
+    // Handle key press in the input field (send message on Enter)
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    return (
+        <div className="sidebar-container">
+            <div className="sidebar-header">
+                <h1>VibeWrite</h1>
+                {!apiKey && (
+                    <small style={{ color: "#d93025" }}>
+                        Please set OpenAI API key in extension popup
+                    </small>
+                )}
+            </div>
+
+            <div className="sidebar-tabs">
+                <div
+                    className={`tab ${activeTab === "chat" ? "active" : ""}`}
+                    onClick={() => setActiveTab("chat")}
+                >
+                    Chat
+                </div>
+                <div
+                    className={`tab ${
+                        activeTab === "suggestions" ? "active" : ""
+                    }`}
+                    onClick={() => setActiveTab("suggestions")}
+                >
+                    Suggestions
+                </div>
+            </div>
+
+            <div className="sidebar-content">
+                {activeTab === "chat" ? (
+                    <div className="chat-container">
+                        <div className="chat-messages" ref={chatMessagesRef}>
+                            {chatMessages.map((message) => (
+                                <MessageBubble
+                                    key={message.id}
+                                    message={message}
+                                />
+                            ))}
+                            {isLoading && activeTab === "chat" && <Loading />}
+                        </div>
+
+                        <div className="chat-input">
+                            <div className="chat-input-box">
+                                <textarea
+                                    value={inputText}
+                                    onChange={(e) =>
+                                        setInputText(e.target.value)
+                                    }
+                                    onKeyDown={handleKeyPress}
+                                    placeholder="Type a message..."
+                                    disabled={!apiKey || isLoading}
+                                />
+                                <button
+                                    onClick={sendMessage}
+                                    disabled={
+                                        !inputText.trim() ||
+                                        !apiKey ||
+                                        isLoading
+                                    }
+                                >
+                                    ➤
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="suggestions-container">
+                        {isLoading ? (
+                            <Loading />
+                        ) : suggestions.length > 0 ? (
+                            suggestions.map((suggestion) => (
+                                <SuggestionCard
+                                    key={suggestion.id}
+                                    suggestion={suggestion}
+                                    onApply={applySuggestion}
+                                    onDismiss={dismissSuggestion}
+                                />
+                            ))
+                        ) : (
+                            <div
+                                style={{
+                                    textAlign: "center",
+                                    padding: "20px 0",
+                                }}
+                            >
+                                <p>No suggestions yet.</p>
+                                <button
+                                    style={{
+                                        backgroundColor: "#1a73e8",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        padding: "8px 16px",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={analyzeDocument}
+                                    disabled={!apiKey}
+                                >
+                                    Analyze Document
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            <div className="sidebar-footer">
+                VibeWrite v1.0.0 - Powered by OpenAI
+            </div>
+        </div>
+    );
+};
+
+const root = ReactDOM.createRoot(
+    document.getElementById("root") as HTMLElement
+);
+root.render(
+    <React.StrictMode>
+        <Sidebar />
+    </React.StrictMode>
+);

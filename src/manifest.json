@@ -1,0 +1,47 @@
+{
+    "manifest_version": 3,
+    "name": "VibeWrite - GPT for Google Docs",
+    "version": "1.0.0",
+    "description": "Enhances Google Docs with OpenAI GPT for writing assistance, suggestions, and real-time chat",
+    "icons": {
+        "16": "icons/icon16.png",
+        "32": "icons/icon32.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "permissions": ["storage", "activeTab", "scripting"],
+    "host_permissions": [
+        "https://docs.google.com/*",
+        "http://localhost:11434/*",
+        "https://api.openai.com/*"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "32": "icons/icon32.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://docs.google.com/document/*"],
+            "js": ["content.js"],
+            "css": ["content.css"]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["sidebar.html", "sidebar.js", "assets/*"],
+            "matches": ["https://docs.google.com/*"]
+        }
+    ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    }
+}
