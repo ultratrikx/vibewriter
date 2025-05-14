@@ -39,6 +39,7 @@ export interface WritingSuggestion {
     suggestion: string;
     reason: string;
     timestamp: number;
+    isError?: boolean; // Flag to indicate this is an error message
 }
 
 // Chat message

@@ -1,6 +1,80 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
-import { StorageService, AIProvider, AIModelConfig } from "../utils/services";
+import {
+    StorageService,
+    AIProvider,
+    AIModelConfig,
+    OllamaHelper,
+} from "../utils/services";
+
+// Ollama connection status component
+const OllamaConnectionStatus: React.FC<{ baseUrl: string }> = ({ baseUrl }) => {
+    const [connectionStatus, setConnectionStatus] = useState<
+        "checking" | "connected" | "disconnected"
+    >("checking");
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+    useEffect(() => {
+        const checkConnection = async () => {
+            setConnectionStatus("checking");
+            const isConnected = await OllamaHelper.checkConnection(baseUrl);
+            setConnectionStatus(isConnected ? "connected" : "disconnected");
+
+            if (isConnected) {
+                const models = await OllamaHelper.getAvailableModels(baseUrl);
+                setAvailableModels(models);
+            }
+        };
+
+        checkConnection();
+    }, [baseUrl]);
+
+    return (
+        <div>
+            <h4
+                style={{
+                    margin: "0 0 5px 0",
+                    color: "#1a73e8",
+                    display: "flex",
+                    alignItems: "center",
+                }}
+            >
+                <span
+                    style={{
+                        width: "10px",
+                        height: "10px",
+                        borderRadius: "50%",
+                        backgroundColor:
+                            connectionStatus === "connected"
+                                ? "#34a853"
+                                : connectionStatus === "disconnected"
+                                ? "#ea4335"
+                                : "#fbbc05",
+                        marginRight: "8px",
+                        display: "inline-block",
+                    }}
+                ></span>
+                Ollama Status:{" "}
+                {connectionStatus === "connected"
+                    ? "Connected"
+                    : connectionStatus === "disconnected"
+                    ? "Disconnected"
+                    : "Checking..."}
+            </h4>
+
+            {connectionStatus === "connected" && availableModels.length > 0 && (
+                <div style={{ fontSize: "11px", marginTop: "5px" }}>
+                    <p style={{ margin: "0", fontStyle: "italic" }}>
+                        Available models:{" "}
+                        {availableModels.slice(0, 3).join(", ")}
+                        {availableModels.length > 3 &&
+                            ` +${availableModels.length - 3} more`}
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const Popup: React.FC = () => {
     const [apiKey, setApiKey] = useState<string>("");
@@ -219,16 +293,57 @@ const Popup: React.FC = () => {
                     />
                 </div>
             ) : (
-                <div className="form-group">
-                    <label htmlFor="ollama-url">Ollama Base URL</label>
-                    <input
-                        type="text"
-                        id="ollama-url"
-                        value={ollamaBaseUrl}
-                        onChange={(e) => setOllamaBaseUrl(e.target.value)}
-                        placeholder="http://localhost:11434"
-                    />
-                </div>
+                <>
+                    <div className="form-group">
+                        <label htmlFor="ollama-url">Ollama Base URL</label>
+                        <input
+                            type="text"
+                            id="ollama-url"
+                            value={ollamaBaseUrl}
+                            onChange={(e) => setOllamaBaseUrl(e.target.value)}
+                            placeholder="http://localhost:11434"
+                        />
+                    </div>{" "}
+                    <div
+                        className="info-box"
+                        style={{
+                            backgroundColor: "#f8f9fa",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            padding: "10px",
+                            marginBottom: "15px",
+                            fontSize: "12px",
+                        }}
+                    >
+                        <OllamaConnectionStatus baseUrl={ollamaBaseUrl} />
+                        <h4
+                            style={{ margin: "10px 0 5px 0", color: "#1a73e8" }}
+                        >
+                            Ollama Setup Tips:
+                        </h4>
+                        <p style={{ margin: "5px 0" }}>
+                            1. Make sure Ollama is running locally
+                        </p>
+                        <p style={{ margin: "5px 0" }}>
+                            2. For best results, start Ollama with CORS enabled:
+                        </p>
+                        <pre
+                            style={{
+                                backgroundColor: "#eee",
+                                padding: "5px",
+                                overflowX: "auto",
+                                fontSize: "11px",
+                            }}
+                        >
+                            OLLAMA_ORIGINS=* ollama serve
+                        </pre>
+                        <p style={{ margin: "5px 0" }}>
+                            3. If you encounter 403 errors, this extension will
+                            automatically route Ollama API calls through the
+                            background script
+                        </p>
+                    </div>
+                </>
             )}
             <div className="form-group">
                 <label htmlFor="ai-model">AI Model</label>

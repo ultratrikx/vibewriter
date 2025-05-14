@@ -1,6 +1,6 @@
-# VibeWrite - OpenAI GPT for Google Docs
+# VibeWrite - AI Assistant for Google Docs
 
-A Chrome extension that integrates OpenAI GPT into Google Docs to provide real-time writing assistance, suggestions, and a chat interface.
+A Chrome extension that integrates AI (OpenAI or Ollama) into Google Docs to provide real-time writing assistance, suggestions, and a chat interface. Choose between cloud-based OpenAI or local Ollama models for privacy.
 
 ## Features
 

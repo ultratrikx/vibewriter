@@ -42,11 +42,58 @@ async function initVibeWrite() {
     // Wait for the Google Docs UI to fully load
     await waitForElement(".docs-titlebar-buttons");
 
+    // Start periodic document content monitoring for debugging
+    startDocumentMonitoring();
+
     // Add our custom UI elements
     addVibeWriteUI();
 
     // Set up message handling
     setupMessageHandlers();
+}
+
+// Monitor document content availability
+function startDocumentMonitoring() {
+    console.log("Starting document content monitoring...");
+
+    // Enable debug logging in GoogleDocsAPI
+    GoogleDocsAPI.startDebugLogging();
+
+    // Also perform our own check to ensure document is accessible
+    let checkCount = 0;
+    const maxChecks = 20;
+
+    const checkInterval = setInterval(() => {
+        checkCount++;
+
+        try {
+            const content = GoogleDocsAPI.getDocumentContent();
+            if (content) {
+                console.log(
+                    `Document content monitoring: Content accessible (${content.length} chars)`
+                );
+                clearInterval(checkInterval);
+                GoogleDocsAPI.stopDebugLogging(); // Stop logging once we confirm it works
+            } else {
+                console.warn(
+                    `Document content monitoring: No content available (check ${checkCount}/${maxChecks})`
+                );
+            }
+        } catch (err) {
+            console.error(
+                "Document content monitoring: Error accessing content",
+                err
+            );
+        }
+
+        // Stop checking after maxChecks
+        if (checkCount >= maxChecks) {
+            console.warn(
+                "Document content monitoring: Max checks reached, stopping monitoring"
+            );
+            clearInterval(checkInterval);
+        }
+    }, 3000);
 }
 
 // Function to create and add the VibeWrite UI to Google Docs
@@ -177,66 +224,66 @@ function addFeedback() {
 
 // Set up message handlers
 function setupMessageHandlers() {
-    chrome.runtime.onMessage.addListener(
-        (
-            message: Message,
-            sender,
-            sendResponse: (response: Response) => void
-        ) => {
-            console.log("Content script received message:", message);
-            switch (message.type) {
-                case "TOGGLE_SIDEBAR":
-                    toggleSidebar();
-                    sendResponse({ success: true });
-                    break;
+    console.log("Setting up message handlers...");
 
-                case "RELOAD_SETTINGS":
-                    console.log("Reloading settings in content script");
-                    // Forward the message to the sidebar iframe
-                    const sidebarIframe = document.querySelector(
-                        "#vibewrite-sidebar iframe"
-                    );
-                    if (sidebarIframe) {
-                        (
-                            sidebarIframe as HTMLIFrameElement
-                        ).contentWindow?.postMessage(
-                            { type: "RELOAD_SETTINGS" },
-                            "*"
-                        );
-                    }
-                    sendResponse({ success: true });
-                    break;
+    // Listen for messages from the extension
+    chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse: (response: Response) => void) => {
+        console.log("Content script received message:", message);
 
-                case "GET_SELECTED_TEXT":
-                    const selectedText = GoogleDocsAPI.getSelectedText();
-                    sendResponse({ success: true, data: selectedText });
-                    break;
+        switch (message.type) {
+            case "ANALYZE_DOCUMENT":
+                console.log("Received ANALYZE_DOCUMENT message");
+                postMessageToSidebar({ type: "ANALYZE_DOCUMENT" });
+                sendResponse({ success: true });
+                break;
 
-                case "GET_DOCUMENT_CONTENT":
-                    const documentContent = GoogleDocsAPI.getDocumentContent();
-                    sendResponse({ success: true, data: documentContent });
-                    break;
+            case "GET_DOCUMENT_CONTENT":
+                console.log("Received GET_DOCUMENT_CONTENT message");
+                const content = GoogleDocsAPI.getDocumentContent();
+                sendResponse({ 
+                    success: true, 
+                    data: { content }
+                });
+                break;
 
-                case "ADD_COMMENT":
-                    if (message.payload && message.payload.commentText) {
-                        const success = GoogleDocsAPI.addComment(
-                            message.payload.commentText
-                        );
-                        sendResponse({ success });
-                    } else {
-                        sendResponse({
-                            success: false,
-                            error: "No comment text provided",
-                        });
-                    }
-                    break;
+            default:
+                console.warn("Unknown message type:", message.type);
+                sendResponse({ 
+                    success: false, 
+                    error: "Unknown message type" 
+                });
+        }
 
-                default:
-                    sendResponse({
-                        success: false,
-                        error: "Unknown message type",
-                    });
-            }
+        return true; // Important: indicates we'll respond asynchronously
+    });
+
+    // Also listen for messages from the sidebar iframe
+    window.addEventListener("message", (event) => {
+        // Only accept messages from the sidebar iframe
+        if (event.source !== document.querySelector<HTMLIFrameElement>("#vibewrite-sidebar")?.contentWindow) {
+            return;
+        }
+
+        console.log("Content script received window message from sidebar:", event.data);
+
+        if (event.data && event.data.type === "GET_DOCUMENT_CONTENT") {
+            console.log("Processing GET_DOCUMENT_CONTENT request from sidebar");
+            
+            try {
+                // Get document content using GoogleDocsAPI
+                const content = GoogleDocsAPI.getDocumentContent();
+                
+                // Send the content back to the sidebar
+                postMessageToSidebar({
+                    type: "DOCUMENT_CONTENT_RESPONSE",
+                    content: content || ""
+                });
+                
+                console.log(`Sent document content to sidebar (${content?.length || 0} characters)`);
+            } catch (error) {
+                console.error("Error getting document content:", error);
+                
+                // Send error back to the sidebar
 
             return true; // Indicates we'll respond asynchronously
         }

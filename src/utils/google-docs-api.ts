@@ -1,9 +1,84 @@
 // API for interacting with Google Docs
-export class GoogleDocsAPI {    /**
+export class GoogleDocsAPI {
+    private static debugInterval: number | null = null;
+    private static lastDebugTime: number = 0;
+
+    /**
+     * Start periodic logging of document state
+     */
+    static startDebugLogging() {
+        // Don't start multiple debug intervals
+        if (this.debugInterval !== null) return;
+
+        console.log("Starting GoogleDocsAPI debug logging");
+        this.debugInterval = window.setInterval(() => {
+            const now = Date.now();
+            // Only log every 5 seconds at most to avoid spamming the console
+            if (now - this.lastDebugTime > 5000) {
+                this.lastDebugTime = now;
+
+                const isInDocs = this.isInGoogleDocs();
+                const paragraphs = document.querySelectorAll(
+                    ".kix-paragraphrenderer"
+                );
+
+                console.log(
+                    `[GoogleDocsAPI Debug] isInGoogleDocs: ${isInDocs}`
+                );
+                console.log(
+                    `[GoogleDocsAPI Debug] paragraphs found: ${
+                        paragraphs?.length || 0
+                    }`
+                );
+
+                if (paragraphs && paragraphs.length > 0) {
+                    const firstPara = paragraphs[0].textContent?.substring(
+                        0,
+                        50
+                    );
+                    console.log(
+                        `[GoogleDocsAPI Debug] First paragraph starts with: ${firstPara}...`
+                    );
+                }
+            }
+        }, 1000);
+    }
+
+    /**
+     * Stop periodic logging
+     */
+    static stopDebugLogging() {
+        if (this.debugInterval !== null) {
+            window.clearInterval(this.debugInterval);
+            this.debugInterval = null;
+            console.log("Stopped GoogleDocsAPI debug logging");
+        }
+    }
+
+    /**
+     * Check if we're currently in a Google Docs document editor
+     */
+    static isInGoogleDocs(): boolean {
+        try {
+            // Check for Google Docs specific elements
+            const isInDocs =
+                window.location.hostname === "docs.google.com" &&
+                (document.querySelector(".kix-paragraphrenderer") !== null ||
+                    document.querySelector(".docs-editor") !== null);
+
+            return isInDocs;
+        } catch (error) {
+            console.error("Error checking if in Google Docs:", error);
+            return false;
+        }
+    }
+    /**
      * Retrieves the entire document content from Google Docs
      */
-    static getDocumentContent(): string {
+    static getDocumentContent(maxRetries = 3): string {
         try {
+            console.log("Attempting to retrieve document content...");
+
             // Check if we're in a Google Docs document editor
             if (!this.isInGoogleDocs()) {
                 console.error("Not in a Google Docs document");
@@ -11,13 +86,64 @@ export class GoogleDocsAPI {    /**
             }
 
             // Get all text content from the document
-            const paragraphs = document.querySelectorAll(".kix-paragraphrenderer");
-            
+            const paragraphs = document.querySelectorAll(
+                ".kix-paragraphrenderer"
+            );
+
             if (!paragraphs || paragraphs.length === 0) {
-                console.error("Could not find paragraph elements in document, DOM might not be ready");
+                console.error(
+                    "Could not find paragraph elements in document, DOM might not be ready"
+                );
+
+                // Start debug logging when we can't find paragraph elements
+                this.startDebugLogging();
+
+                // If we have retries left, try a different selector
+                if (maxRetries > 0) {
+                    console.log(
+                        `Trying alternative selectors (${maxRetries} retries left)`
+                    );
+
+                    // Try alternative selectors for Google Docs content
+                    const alternatives = [
+                        ".kix-page-content-wrapper",
+                        ".docs-texteventtarget-iframe",
+                        ".docs-editor-container",
+                    ];
+
+                    for (const selector of alternatives) {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements && elements.length > 0) {
+                            console.log(
+                                `Found ${elements.length} elements with selector ${selector}`
+                            );
+
+                            // Try to get the content from these elements
+                            const content = Array.from(elements)
+                                .map((element) => element.textContent)
+                                .filter(Boolean)
+                                .join("\n");
+
+                            if (content) {
+                                console.log(
+                                    `Retrieved ${content.length} characters using alternative selector`
+                                );
+                                return content;
+                            }
+                        }
+                    }
+
+                    // If none of the alternatives worked, wait a bit and retry with original selector
+                    return new Promise<string>((resolve) => {
+                        setTimeout(() => {
+                            resolve(this.getDocumentContent(maxRetries - 1));
+                        }, 500);
+                    }) as unknown as string;
+                }
+
                 return "";
             }
-            
+
             // Extract content
             const documentContent = Array.from(paragraphs)
                 .map((element) => element.textContent)
@@ -25,12 +151,19 @@ export class GoogleDocsAPI {    /**
 
             if (!documentContent) {
                 console.warn("Document content appears to be empty");
+                this.startDebugLogging();
+            } else {
+                // Content retrieved successfully, we can stop debug logging
+                this.stopDebugLogging();
             }
-            
-            console.log(`Retrieved ${documentContent.length} characters from document`);
+
+            console.log(
+                `Retrieved ${documentContent.length} characters from document`
+            );
             return documentContent;
         } catch (error) {
             console.error("Error getting document content:", error);
+            this.startDebugLogging();
             return "";
         }
     }
@@ -117,12 +250,10 @@ export class GoogleDocsAPI {    /**
     }
 
     /**
-     * Check if we're in a Google Docs document
+     * Check if a URL is a Google Docs document URL
      */
-    static isInGoogleDocs(): boolean {
-        return window.location.href.startsWith(
-            "https://docs.google.com/document/"
-        );
+    static isGoogleDocsUrl(url: string): boolean {
+        return url.startsWith("https://docs.google.com/document/");
     }
 
     /**
