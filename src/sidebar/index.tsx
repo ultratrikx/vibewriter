@@ -110,13 +110,15 @@ const Sidebar: React.FC = () => {
             if (message.type === "ANALYZE_DOCUMENT") {
                 analyzeDocument();
             }
-        };
-
-        // Set up message listener for window messages (from parent iframe)
+        }; // Set up message listener for window messages (from parent iframe)
         const windowMessageListener = (event: MessageEvent) => {
+            console.log("Sidebar received window message:", event.data);
             if (event.data && event.data.type === "RELOAD_SETTINGS") {
                 console.log("Sidebar received RELOAD_SETTINGS message");
                 loadAISettings();
+            } else if (event.data && event.data.type === "ANALYZE_DOCUMENT") {
+                console.log("Sidebar received ANALYZE_DOCUMENT message");
+                analyzeDocument();
             }
         };
 
@@ -135,7 +137,7 @@ const Sidebar: React.FC = () => {
             chatMessagesRef.current.scrollTop =
                 chatMessagesRef.current.scrollHeight;
         }
-    }, [chatMessages]);    // Send a message in the chat
+    }, [chatMessages]); // Send a message in the chat
     const sendMessage = async () => {
         // Don't require API key for Ollama
         if (!inputText.trim() || (aiProvider === "openai" && !apiKey)) return;
@@ -195,16 +197,27 @@ const Sidebar: React.FC = () => {
             setChatMessages((prevMessages) => [
                 ...prevMessages,
                 assistantMessage,
-            ]);
-        } catch (error) {
+            ]);        } catch (error: any) {
             console.error("Failed to send message:", error);
 
-            // Add an error message to the chat
+            // Create a more specific error message based on what went wrong
+            let errorContent = "Sorry, I encountered an error processing your request.";
+            
+            if (error.message && error.message.includes("403")) {
+                errorContent = "Error: Access to Ollama server is forbidden (403 error). Make sure Ollama is running with proper permissions and CORS is enabled.";
+            } else if (error.message && error.message.includes("Ollama")) {
+                errorContent = error.message;
+            } else if (aiProvider === "openai") {
+                errorContent = "OpenAI API error. Please check your API key and try again.";
+            } else if (aiProvider === "ollama") {
+                errorContent = "Could not connect to Ollama server. Please make sure Ollama is running at the configured URL and accessible from the browser.";
+            }
+
+            // Add the error message to the chat
             const errorMessage: ChatMessage = {
                 id: Date.now().toString(),
                 role: "assistant",
-                content:
-                    "Sorry, I encountered an error processing your request. Please check your API key or try again later.",
+                content: errorContent,
                 timestamp: Date.now(),
             };
 
@@ -212,7 +225,7 @@ const Sidebar: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    };    // Analyze the document to generate suggestions
+    }; // Analyze the document to generate suggestions
     const analyzeDocument = async () => {
         // Don't require API key for Ollama
         if (aiProvider === "openai" && !apiKey) return;
@@ -347,14 +360,19 @@ const Sidebar: React.FC = () => {
                         </div>
 
                         <div className="chat-input">
-                            <div className="chat-input-box">                                <textarea
+                            <div className="chat-input-box">
+                                {" "}
+                                <textarea
                                     value={inputText}
                                     onChange={(e) =>
                                         setInputText(e.target.value)
                                     }
                                     onKeyDown={handleKeyPress}
                                     placeholder="Type a message..."
-                                    disabled={(aiProvider === "openai" && !apiKey) || isLoading}
+                                    disabled={
+                                        (aiProvider === "openai" && !apiKey) ||
+                                        isLoading
+                                    }
                                 />
                                 <button
                                     onClick={sendMessage}
@@ -398,8 +416,11 @@ const Sidebar: React.FC = () => {
                                         borderRadius: "4px",
                                         padding: "8px 16px",
                                         cursor: "pointer",
-                                    }}                                    onClick={analyzeDocument}
-                                    disabled={aiProvider === "openai" && !apiKey}
+                                    }}
+                                    onClick={analyzeDocument}
+                                    disabled={
+                                        aiProvider === "openai" && !apiKey
+                                    }
                                 >
                                     Analyze Document
                                 </button>

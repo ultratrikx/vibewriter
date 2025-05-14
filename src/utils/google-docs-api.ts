@@ -1,17 +1,33 @@
 // API for interacting with Google Docs
-export class GoogleDocsAPI {
-    /**
+export class GoogleDocsAPI {    /**
      * Retrieves the entire document content from Google Docs
      */
     static getDocumentContent(): string {
         try {
+            // Check if we're in a Google Docs document editor
+            if (!this.isInGoogleDocs()) {
+                console.error("Not in a Google Docs document");
+                return "";
+            }
+
             // Get all text content from the document
-            const documentContent = Array.from(
-                document.querySelectorAll(".kix-paragraphrenderer")
-            )
+            const paragraphs = document.querySelectorAll(".kix-paragraphrenderer");
+            
+            if (!paragraphs || paragraphs.length === 0) {
+                console.error("Could not find paragraph elements in document, DOM might not be ready");
+                return "";
+            }
+            
+            // Extract content
+            const documentContent = Array.from(paragraphs)
                 .map((element) => element.textContent)
                 .join("\n");
 
+            if (!documentContent) {
+                console.warn("Document content appears to be empty");
+            }
+            
+            console.log(`Retrieved ${documentContent.length} characters from document`);
             return documentContent;
         } catch (error) {
             console.error("Error getting document content:", error);

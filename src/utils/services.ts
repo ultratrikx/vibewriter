@@ -102,12 +102,13 @@ export class AIService {
                 error: "Failed to generate completion. Please try again.",
             };
         }
-    }
-
-    private async generateOllamaCompletion(
+    }    private async generateOllamaCompletion(
         prompt: string
     ): Promise<AIResponse> {
         try {
+            console.log(`Connecting to Ollama at: ${this.ollamaBaseUrl}`);
+            
+            // Use a more detailed config for better error handling
             const response = await axios.post(
                 `${this.ollamaBaseUrl}/api/generate`,
                 {
@@ -118,19 +119,57 @@ export class AIService {
                         temperature: 0.7,
                         num_predict: 500,
                     },
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        // Allow from chrome extension origin
+                        'Access-Control-Allow-Origin': chrome.runtime.getURL(''),
+                    },
+                    timeout: 60000, // 60 second timeout
                 }
             );
 
             if (response.data && response.data.response) {
+                console.log("Ollama response received successfully");
                 return { text: response.data.response };
             } else {
+                console.error("Ollama response missing expected data:", response.data);
                 return { text: "", error: "No response from Ollama API" };
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Ollama API error:", error);
+            
+            // Provide more specific error messages based on the error type
+            if (error.response) {
+                // Server responded with a status code outside of 2xx
+                console.error(`Ollama server responded with status ${error.response.status}:`, 
+                    error.response.data);
+                
+                if (error.response.status === 403) {
+                    return {
+                        text: "",
+                        error: "Access forbidden (403). Make sure Ollama server has CORS enabled and is accessible from browser extensions.",
+                    };
+                }
+                
+                return {
+                    text: "",
+                    error: `Ollama server error (${error.response.status}). Check server logs.`,
+                };
+            } else if (error.request) {
+                // Request was made but no response received
+                console.error("No response received from Ollama server");
+                return {
+                    text: "",
+                    error: "No response from Ollama server. Make sure Ollama is running at " + this.ollamaBaseUrl,
+                };
+            }
+            
             return {
                 text: "",
-                error: "Failed to generate completion with Ollama. Please check the Ollama server is running.",
+                error: "Failed to connect to Ollama. Please check that Ollama is running and accessible.",
             };
         }
     }

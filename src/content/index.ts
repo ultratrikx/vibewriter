@@ -128,13 +128,24 @@ function toggleSidebar() {
 
 // Function to analyze the document and show suggestions
 function analyzeDocument() {
-    // Send message to the sidebar to analyze the document
-    chrome.runtime.sendMessage({ type: "ANALYZE_DOCUMENT" });
-
     // Make sure the sidebar is open
     const sidebar = document.getElementById("vibewrite-sidebar");
     if (sidebar && !sidebar.classList.contains("open")) {
         sidebar.classList.add("open");
+    }
+
+    // Send the analyze message directly to the sidebar iframe
+    const sidebarIframe = document.querySelector("#vibewrite-sidebar iframe");
+    if (sidebarIframe) {
+        console.log("Sending ANALYZE_DOCUMENT to sidebar iframe");
+        (sidebarIframe as HTMLIFrameElement).contentWindow?.postMessage(
+            { type: "ANALYZE_DOCUMENT" },
+            "*"
+        );
+    } else {
+        console.error("Could not find sidebar iframe");
+        // Fallback to sending via chrome runtime messaging
+        chrome.runtime.sendMessage({ type: "ANALYZE_DOCUMENT" });
     }
 }
 

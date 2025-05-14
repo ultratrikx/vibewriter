@@ -48,6 +48,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             return true; // Important: indicates we'll respond asynchronously
 
+        case "ANALYZE_DOCUMENT":
+            // Forward the analyze document message to the content script
+            if (sender.tab && sender.tab.id) {
+                chrome.tabs
+                    .sendMessage(sender.tab.id, { type: "ANALYZE_DOCUMENT" })
+                    .then(() => {
+                        console.log(
+                            "Forwarded ANALYZE_DOCUMENT message to content script"
+                        );
+                        sendResponse({ success: true });
+                    })
+                    .catch((error) => {
+                        console.error(
+                            "Error forwarding ANALYZE_DOCUMENT message:",
+                            error
+                        );
+                        sendResponse({
+                            success: false,
+                            error: "Failed to forward message",
+                        });
+                    });
+            } else {
+                // We're receiving from the content script, forward to the active tab
+                chrome.tabs.query(
+                    { active: true, currentWindow: true },
+                    (tabs) => {
+                        if (tabs[0]?.id) {
+                            chrome.tabs
+                                .sendMessage(tabs[0].id, {
+                                    type: "ANALYZE_DOCUMENT",
+                                })
+                                .then(() => {
+                                    console.log(
+                                        "Forwarded ANALYZE_DOCUMENT to active tab"
+                                    );
+                                    sendResponse({ success: true });
+                                })
+                                .catch((error) => {
+                                    console.error(
+                                        "Error forwarding to active tab:",
+                                        error
+                                    );
+                                    sendResponse({
+                                        success: false,
+                                        error: "Failed to forward message",
+                                    });
+                                });
+                        } else {
+                            sendResponse({
+                                success: false,
+                                error: "No active tab found",
+                            });
+                        }
+                    }
+                );
+            }
+            return true;
+
         default:
             console.log("Unhandled message type:", message.type);
             sendResponse({ success: false, error: "Unknown message type" });
