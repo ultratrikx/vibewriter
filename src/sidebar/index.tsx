@@ -37,7 +37,8 @@ const SuggestionCard: React.FC<{
     suggestion: WritingSuggestion;
     onApply: (suggestion: WritingSuggestion) => void;
     onDismiss: (id: string) => void;
-}> = ({ suggestion, onApply, onDismiss }) => {
+    onRetry?: () => void; // Added optional retry handler
+}> = ({ suggestion, onApply, onDismiss, onRetry }) => {
     // Special handling for error suggestions
     if (suggestion.isError) {
         return (
@@ -61,7 +62,9 @@ const SuggestionCard: React.FC<{
                     <button onClick={() => onDismiss(suggestion.id)}>
                         Dismiss
                     </button>
-                    <button onClick={() => window.location.reload()}>
+                    <button
+                        onClick={onRetry || (() => window.location.reload())}
+                    >
                         Retry
                     </button>
                 </div>
@@ -215,6 +218,42 @@ const Sidebar: React.FC<{}> = () => {
     const aiService = useRef<AIService>(new AIService());
     const storageService = new StorageService();
 
+    // Create a helper function to handle document content retrieval failures
+    const handleDocumentContentError = (error: Error) => {
+        console.error("Document content error:", error);
+        setSuggestions([
+            {
+                id: Date.now().toString(),
+                originalText: "Document Access Error",
+                suggestion: "Unable to access Google Docs content",
+                reason: "VibeWrite needs permission to access the document content. Please refresh the page and ensure you're in edit mode with the document fully loaded.",
+                timestamp: Date.now(),
+                isError: true,
+            },
+        ]);
+        setIsLoading(false);
+    };
+
+    // Create a function to retry document content retrieval
+    const retryDocumentAccess = () => {
+        setIsLoading(true);
+        setSuggestions([
+            {
+                id: Date.now().toString(),
+                originalText: "Retrying...",
+                suggestion: "Attempting to reconnect to document",
+                reason: "Please wait while we try to access the document again.",
+                timestamp: Date.now(),
+                isError: false,
+            },
+        ]);
+
+        // Small delay before retry
+        setTimeout(() => {
+            analyzeDocument();
+        }, 1000);
+    };
+
     // Load the API settings when the sidebar is opened
     const loadAISettings = async () => {
         const aiSettings = await storageService.getAISettings();
@@ -253,7 +292,7 @@ const Sidebar: React.FC<{}> = () => {
 
         try {
             console.log("Starting document analysis...");
-            
+
             // Show loading indicator
             setSuggestions([
                 {
@@ -262,53 +301,201 @@ const Sidebar: React.FC<{}> = () => {
                     suggestion: "Retrieving document content...",
                     reason: "Please wait while we access the document content.",
                     timestamp: Date.now(),
-                    isError: false
-                }
-            ]);
-            
-            // Use message passing to get document content from content script
+                    isError: false,
+                },
+            ]); // Use message passing to get document content from content script with retry mechanism
             let documentContent = "";
             try {
-                // Send a message to the parent window (content script)
-                window.parent.postMessage({ type: "GET_DOCUMENT_CONTENT" }, "*");
-                
-                // Wait for the response with a timeout
-                documentContent = await new Promise((resolve, reject) => {
-                    // Set timeout for document content retrieval
-                    const timeout = setTimeout(() => {
-                        reject(new Error("Timed out waiting for document content"));
-                    }, 5000);
-                    
-                    // Listen for the response
-                    const messageHandler = (event: MessageEvent) => {
-                        if (event.data && event.data.type === "DOCUMENT_CONTENT_RESPONSE") {
-                            clearTimeout(timeout);
-                            window.removeEventListener("message", messageHandler);
-                            
-                            if (event.data.error) {
-                                reject(new Error(event.data.error));
-                            } else {
-                                resolve(event.data.content || "");
+                // First attempt to get content
+                console.log("Initial attempt to retrieve document content");
+                documentContent = await getDocumentContentWithRetry(15000); // 15 second timeout for first attempt
+
+                // If content is empty or too short, try again with a longer timeout
+                if (!documentContent || documentContent.length < 50) {
+                    console.log(
+                        "First attempt returned empty/short content, retrying..."
+                    );
+                    setSuggestions([
+                        {
+                            id: Date.now().toString(),
+                            originalText: "Connecting to document...",
+                            suggestion: "Retrying content retrieval...",
+                            reason: "The initial attempt did not return sufficient document content. Making another attempt.",
+                            timestamp: Date.now(),
+                            isError: false,
+                        },
+                    ]);
+
+                    // Second attempt with longer timeout
+                    documentContent = await getDocumentContentWithRetry(20000);
+                }
+
+                // If still empty after second attempt, try a different approach
+                if (!documentContent || documentContent.length < 50) {
+                    console.log(
+                        "Second attempt failed, trying through background script..."
+                    );
+
+                    // Try getting content through background script as final fallback
+                    try {
+                        const response = await new Promise<{
+                            content?: string;
+                            error?: string;
+                        }>((resolve) => {
+                            chrome.runtime.sendMessage(
+                                {
+                                    type: "GET_DOCUMENT_CONTENT_FROM_BACKGROUND",
+                                },
+                                (response) => resolve(response?.data || {})
+                            );
+                        });
+
+                        if (response.content) {
+                            documentContent = response.content;
+                            console.log(
+                                "Successfully retrieved content via background script"
+                            );
+                        } else if (response.error) {
+                            throw new Error(
+                                `Background script error: ${response.error}`
+                            );
+                        }
+                    } catch (bgError) {
+                        console.error(
+                            "Background script approach failed:",
+                            bgError
+                        );
+                    }
+                }
+
+                // Function to get document content with a specified timeout
+                async function getDocumentContentWithRetry(
+                    timeoutMs: number
+                ): Promise<string> {
+                    return new Promise((resolve, reject) => {
+                        const messageId = Date.now().toString(); // Unique ID for this request
+
+                        // Create timeout for retrieval
+                        const timeout = setTimeout(() => {
+                            window.removeEventListener(
+                                "message",
+                                messageHandler
+                            );
+                            reject(
+                                new Error(
+                                    `Timed out after ${timeoutMs}ms waiting for document content`
+                                )
+                            );
+                        }, timeoutMs);
+
+                        // Message handler function
+                        function messageHandler(event: MessageEvent) {
+                            if (
+                                event.data &&
+                                event.data.type === "DOCUMENT_CONTENT_RESPONSE"
+                            ) {
+                                console.log(
+                                    "Received document content response:",
+                                    event.data.content
+                                        ? `${event.data.content.length} chars`
+                                        : "No content",
+                                    event.data.error
+                                        ? `Error: ${event.data.error}`
+                                        : "No error"
+                                );
+
+                                clearTimeout(timeout);
+                                window.removeEventListener(
+                                    "message",
+                                    messageHandler
+                                );
+
+                                if (event.data.error) {
+                                    reject(new Error(event.data.error));
+                                } else {
+                                    resolve(event.data.content || "");
+                                }
                             }
                         }
-                    };
-                    
-                    window.addEventListener("message", messageHandler);
-                });
-                
-                console.log(`Document content received, length: ${documentContent.length} characters`);
-                
+
+                        // Listen for response
+                        window.addEventListener("message", messageHandler);
+                        // Send request to parent window (content script)
+                        console.log(
+                            `Sending GET_DOCUMENT_CONTENT request with timeout ${timeoutMs}ms`
+                        );
+
+                        // Try all possible methods to communicate with the content script
+                        try {
+                            // Method 1: Send via parent
+                            window.parent.postMessage(
+                                {
+                                    type: "GET_DOCUMENT_CONTENT",
+                                    id: messageId,
+                                    source: "vibewrite-sidebar",
+                                },
+                                "*"
+                            );
+
+                            // Method 2: Top frame
+                            if (window.top && window.top !== window.parent) {
+                                console.log(
+                                    "Also sending request to top window as fallback"
+                                );
+                                window.top.postMessage(
+                                    {
+                                        type: "GET_DOCUMENT_CONTENT",
+                                        id: messageId,
+                                        source: "vibewrite-sidebar",
+                                    },
+                                    "*"
+                                );
+                            }
+
+                            // Method 3: Broadcast to all frames
+                            window.postMessage(
+                                {
+                                    type: "GET_DOCUMENT_CONTENT",
+                                    id: messageId,
+                                    source: "vibewrite-sidebar-broadcast",
+                                },
+                                "*"
+                            );
+
+                            // Method 4: Try to use Chrome extension messaging
+                            // This will be caught by the background script which can relay to content script
+                            chrome.runtime.sendMessage({
+                                type: "GET_DOCUMENT_CONTENT_RELAY",
+                                id: messageId,
+                            });
+                        } catch (err) {
+                            console.error(
+                                "Error trying to send document content request:",
+                                err
+                            );
+                        }
+                    });
+                }
+
+                console.log(
+                    `Document content received, length: ${documentContent.length} characters`
+                );
+
                 if (!documentContent) {
                     throw new Error("Empty document content received");
                 }
             } catch (contentError: any) {
-                console.error("Failed to retrieve document content:", contentError);
-                throw new Error(`Could not access document content: ${contentError.message}`);
+                console.error(
+                    "Failed to retrieve document content:",
+                    contentError
+                );
+                handleDocumentContentError(contentError);
+                return;
             }
-            
+
             // Generate suggestions by sending content to OpenAI or Ollama
             let prompt;
-            
+
             if (aiProvider === "ollama") {
                 // More explicit formatting instructions for Ollama models
                 prompt = `
@@ -492,9 +679,76 @@ const Sidebar: React.FC<{}> = () => {
         setIsLoading(true);
 
         try {
-            // Get context from the document
-            const documentContent = GoogleDocsAPI.getDocumentContent();
-            const selectedText = GoogleDocsAPI.getSelectedText();
+            // Get context from the document using message passing
+            let documentContent = "";
+            let selectedText = "";
+
+            try {
+                // Request document content
+                window.parent.postMessage(
+                    { type: "GET_DOCUMENT_CONTENT" },
+                    "*"
+                );
+
+                // Wait for response with timeout
+                documentContent = await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        // Don't reject here, just resolve with empty content
+                        // This prevents errors from showing in the chat
+                        resolve("");
+                    }, 3000);
+
+                    const messageHandler = (event: MessageEvent) => {
+                        if (
+                            event.data &&
+                            event.data.type === "DOCUMENT_CONTENT_RESPONSE"
+                        ) {
+                            clearTimeout(timeout);
+                            window.removeEventListener(
+                                "message",
+                                messageHandler
+                            );
+                            resolve(event.data.content || "");
+                        }
+                    };
+
+                    window.addEventListener("message", messageHandler);
+                });
+
+                // Request selected text
+                window.parent.postMessage({ type: "GET_SELECTED_TEXT" }, "*");
+
+                // Wait for response with timeout
+                selectedText = await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        resolve("");
+                    }, 1000);
+
+                    const messageHandler = (event: MessageEvent) => {
+                        if (
+                            event.data &&
+                            event.data.type === "SELECTED_TEXT_RESPONSE"
+                        ) {
+                            clearTimeout(timeout);
+                            window.removeEventListener(
+                                "message",
+                                messageHandler
+                            );
+                            resolve(event.data.text || "");
+                        }
+                    };
+
+                    window.addEventListener("message", messageHandler);
+                });
+            } catch (error) {
+                console.warn(
+                    "Failed to get document content/selected text via messaging:",
+                    error
+                );
+                // Fallback to direct method
+                documentContent = GoogleDocsAPI.getDocumentContent() || "";
+                selectedText = GoogleDocsAPI.getSelectedText() || "";
+            }
 
             // Construct prompt with context
             const prompt = `
@@ -759,6 +1013,11 @@ const Sidebar: React.FC<{}> = () => {
                                     suggestion={suggestion}
                                     onApply={applySuggestion}
                                     onDismiss={dismissSuggestion}
+                                    onRetry={
+                                        suggestion.isError
+                                            ? retryDocumentAccess
+                                            : undefined
+                                    }
                                 />
                             ))
                         ) : (

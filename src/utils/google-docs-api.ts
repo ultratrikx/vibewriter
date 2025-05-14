@@ -167,6 +167,105 @@ export class GoogleDocsAPI {
             return "";
         }
     }
+    /**
+     * Get document content without checking if we're in Google Docs.
+     * This is used as a fallback method for the message passing architecture.
+     */
+    static forceGetDocumentContent(): string {
+        try {
+            console.log("Attempting forced document content retrieval...");
+
+            // First try to inject a hook directly into the Google Docs page
+            // This aggressive approach may help access the inner document
+            try {
+                const scriptElement = document.createElement("script");
+                scriptElement.textContent = `
+                    try {
+                        // Try to access Google Docs internal data
+                        if (window.IS_INTEGRATION_ADAPTER_RUNNING__) {
+                            // Store document text in a global variable
+                            window.vibeWriteExtractedContent = document.body.innerText || document.documentElement.innerText;
+                            console.log("Document content extracted by injected script");
+                        }
+                    } catch(e) {
+                        console.error("Injected script error:", e);
+                    }
+                `;
+                document.head.appendChild(scriptElement);
+
+                // Wait a moment for script to execute
+                setTimeout(() => {
+                    document.head.removeChild(scriptElement);
+                }, 500);
+
+                // Check if script managed to extract content
+                const extractedContent = (window as any)
+                    .vibeWriteExtractedContent;
+                if (extractedContent && extractedContent.length > 100) {
+                    console.log(
+                        `Retrieved ${extractedContent.length} characters via injected script`
+                    );
+                    return extractedContent;
+                }
+            } catch (e) {
+                console.error("Script injection approach failed:", e);
+            }
+
+            // Try multiple selectors to find document content
+            const selectors = [
+                ".kix-paragraphrenderer",
+                ".kix-page-content-wrapper",
+                ".docs-editor-container",
+                ".kix-appview-editor",
+                ".docs-texteventtarget-iframe",
+                ".kix-canvas-tile-content",
+                ".goog-inline-block.kix-lineview-text-block",
+                "[contenteditable='true']",
+                ".docs-text-ui-cursor-blink", // Try to find cursor position
+                ".kix-canvas-tile-content", // Try to find canvas elements
+                ".goog-inline-block", // Generic Google Docs element
+            ];
+
+            for (const selector of selectors) {
+                const elements = document.querySelectorAll(selector);
+                if (elements && elements.length > 0) {
+                    console.log(
+                        `Found ${elements.length} elements with selector ${selector}`
+                    );
+
+                    const content = Array.from(elements)
+                        .map((element) => element.textContent)
+                        .filter(Boolean)
+                        .join("\n");
+
+                    if (content) {
+                        console.log(
+                            `Retrieved ${content.length} characters using selector ${selector}`
+                        );
+                        return content;
+                    }
+                }
+            }
+
+            // If all selectors fail, try to get any text from the document
+            const allText = document.body.textContent;
+            if (allText && allText.length > 100) {
+                // Only use if substantial content
+                console.log(
+                    `Retrieved ${allText.length} characters from document.body.textContent`
+                );
+                return allText;
+            }
+
+            console.error(
+                "Forced document content retrieval failed - no content found"
+            );
+            return "";
+        } catch (error) {
+            console.error("Error in forced document content retrieval:", error);
+            return "";
+        }
+    }
 
     /**
      * Gets the current selected text in Google Docs

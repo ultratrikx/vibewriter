@@ -18,7 +18,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         })
         .then(() => {
             console.log("Default settings initialized");
-            
+
             // Test Ollama connectivity on install
             checkOllamaConnection("http://localhost:11434");
         })
@@ -32,13 +32,18 @@ async function checkOllamaConnection(baseUrl: string) {
     try {
         console.log("Testing connection to Ollama server at", baseUrl);
         const response = await fetch(`${baseUrl}/api/tags`);
-        
+
         if (response.ok) {
             const data = await response.json();
-            console.log("Ollama connection successful. Available models:", data.models?.map((m: any) => m.name).join(", "));
+            console.log(
+                "Ollama connection successful. Available models:",
+                data.models?.map((m: any) => m.name).join(", ")
+            );
             return true;
         } else {
-            console.warn(`Ollama server returned status ${response.status}: ${response.statusText}`);
+            console.warn(
+                `Ollama server returned status ${response.status}: ${response.statusText}`
+            );
             return false;
         }
     } catch (error) {
@@ -56,66 +61,68 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "CHECK_OLLAMA_CONNECTION":
             console.log("Checking Ollama connection");
             const url = message.data.baseUrl || "http://localhost:11434";
-            
+
             checkOllamaConnection(url)
-                .then(isConnected => {
+                .then((isConnected) => {
                     console.log("Ollama connection result:", isConnected);
                     sendResponse({
                         success: true,
-                        isConnected: isConnected
+                        isConnected: isConnected,
                     });
                 })
-                .catch(error => {
+                .catch((error) => {
                     console.error("Error checking Ollama connection:", error);
                     sendResponse({
                         success: false,
                         isConnected: false,
-                        error: error.message
+                        error: error.message,
                     });
                 });
-            
+
             return true; // Important: indicates we'll respond asynchronously
-        
+
         case "GET_OLLAMA_MODELS":
             // Get available models from Ollama
             console.log("Getting available Ollama models");
             const modelUrl = message.data.baseUrl || "http://localhost:11434";
-            
+
             fetch(`${modelUrl}/api/tags`)
-                .then(response => {
+                .then((response) => {
                     if (!response.ok) {
-                        throw new Error(`Ollama server returned ${response.status}: ${response.statusText}`);
+                        throw new Error(
+                            `Ollama server returned ${response.status}: ${response.statusText}`
+                        );
                     }
                     return response.json();
                 })
-                .then(data => {
+                .then((data) => {
                     console.log("Available Ollama models:", data);
                     sendResponse({
                         success: true,
-                        models: data.models || []
+                        models: data.models || [],
                     });
                 })
-                .catch(error => {
+                .catch((error) => {
                     console.error("Error getting Ollama models:", error);
                     sendResponse({
                         success: false,
-                        error: error.message
+                        error: error.message,
                     });
                 });
-                
+
             return true; // Important: indicates we'll respond asynchronously
-                
+
         case "OLLAMA_API_REQUEST":
             console.log("Processing Ollama API request in background");
-            
+
             // Extract Ollama API request details
             const { baseUrl, model, prompt } = message.data;
-            
+
             // Make the Ollama API call from the background script to avoid CORS
             fetch(`${baseUrl}/api/generate`, {
-                method: 'POST',
+                method: "POST",
                 headers: {
-                    'Content-Type': 'application/json',
+                    "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
                     model: model,
@@ -124,32 +131,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     options: {
                         temperature: 0.7,
                         num_predict: 500,
+                    },
+                }),
+            })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(
+                            `Ollama server returned ${response.status}: ${response.statusText}`
+                        );
                     }
+                    return response.json();
                 })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Ollama server returned ${response.status}: ${response.statusText}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("Ollama API response received:", data);
-                sendResponse({
-                    success: true,
-                    data: data
+                .then((data) => {
+                    console.log("Ollama API response received:", data);
+                    sendResponse({
+                        success: true,
+                        data: data,
+                    });
+                })
+                .catch((error) => {
+                    console.error("Error in Ollama API call:", error);
+                    sendResponse({
+                        success: false,
+                        error: error.message,
+                    });
                 });
-            })
-            .catch(error => {
-                console.error("Error in Ollama API call:", error);
-                sendResponse({
-                    success: false,
-                    error: error.message
-                });
-            });
-            
+
             return true; // Important: indicates we'll respond asynchronously
-            
+
         case "GET_API_KEY":
             chrome.storage.sync
                 .get("openaiApiKey")
@@ -195,19 +204,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     { active: true, currentWindow: true },
                     (tabs) => {
                         if (tabs[0]?.id) {
-                            chrome.tabs.sendMessage(
-                                tabs[0].id,
-                                { type: "ANALYZE_DOCUMENT" }
-                            ).then(() => {
-                                console.log("Forwarded ANALYZE_DOCUMENT to active tab");
-                                sendResponse({ success: true });
-                            }).catch((error: Error) => {
-                                console.error("Error forwarding to active tab:", error);
-                                sendResponse({
-                                    success: false,
-                                    error: "Failed to forward message"
+                            chrome.tabs
+                                .sendMessage(tabs[0].id, {
+                                    type: "ANALYZE_DOCUMENT",
+                                })
+                                .then(() => {
+                                    console.log(
+                                        "Forwarded ANALYZE_DOCUMENT to active tab"
+                                    );
+                                    sendResponse({ success: true });
+                                })
+                                .catch((error: Error) => {
+                                    console.error(
+                                        "Error forwarding to active tab:",
+                                        error
+                                    );
+                                    sendResponse({
+                                        success: false,
+                                        error: "Failed to forward message",
+                                    });
                                 });
-                            });
                         } else {
                             sendResponse({
                                 success: false,
@@ -316,6 +332,84 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 );
             }
             return true;
+
+        case "GET_DOCUMENT_CONTENT_FROM_BACKGROUND":
+            console.log(
+                "Background script received GET_DOCUMENT_CONTENT_FROM_BACKGROUND"
+            );
+            // Since the background script can't access the document directly,
+            // we'll need to relay this to the content script in the active tab
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                    console.log(
+                        `Sending GET_DOCUMENT_CONTENT to tab ${tabs[0].id}`
+                    );
+                    chrome.tabs
+                        .sendMessage(tabs[0].id, {
+                            type: "GET_DOCUMENT_CONTENT",
+                        })
+                        .then((response) => {
+                            console.log(
+                                "Got response from content script:",
+                                response
+                            );
+                            if (response?.success && response?.data?.content) {
+                                sendResponse({
+                                    success: true,
+                                    data: { content: response.data.content },
+                                });
+                            } else {
+                                sendResponse({
+                                    success: false,
+                                    data: {
+                                        error: "Failed to retrieve document content",
+                                    },
+                                });
+                            }
+                        })
+                        .catch((error) => {
+                            console.error(
+                                "Error sending message to content script:",
+                                error
+                            );
+                            sendResponse({
+                                success: false,
+                                data: {
+                                    error: "Communication with content script failed",
+                                },
+                            });
+                        });
+                } else {
+                    console.error("No active tab found");
+                    sendResponse({
+                        success: false,
+                        data: { error: "No active tab found" },
+                    });
+                }
+            });
+            return true; // We will send response asynchronously
+
+        case "GET_DOCUMENT_CONTENT_RELAY":
+            console.log(
+                "Background script relaying document content request to active tab"
+            );
+            // Find active tab and relay the message
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                    chrome.tabs
+                        .sendMessage(tabs[0].id, {
+                            type: "GET_DOCUMENT_CONTENT_RELAY",
+                            source: "background",
+                        })
+                        .catch((error) => {
+                            console.error(
+                                "Error relaying message to tab:",
+                                error
+                            );
+                        });
+                }
+            });
+            return false; // No response needed
 
         default:
             console.log("Unknown message type:", message.type);

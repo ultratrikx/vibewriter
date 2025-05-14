@@ -8,12 +8,13 @@
         "32": "icons/icon32.png",
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
-    },    "permissions": ["storage", "activeTab", "scripting"],
+    },
+    "permissions": ["storage", "activeTab", "scripting"],
     "host_permissions": [
         "https://docs.google.com/*",
         "http://localhost:*/*",
         "http://127.0.0.1:*/*",
-        "http://localhost:11434/*", 
+        "http://localhost:11434/*",
         "https://api.openai.com/*"
     ],
     "action": {
