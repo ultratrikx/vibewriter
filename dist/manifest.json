@@ -9,7 +9,7 @@
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
     },
-    "permissions": ["storage", "activeTab", "scripting"],
+    "permissions": ["storage", "activeTab", "scripting", "identity"],
     "host_permissions": [
         "https://docs.google.com/*",
         "http://localhost:*/*",
@@ -45,5 +45,9 @@
     ],
     "content_security_policy": {
         "extension_pages": "script-src 'self'; object-src 'self'"
+    },
+    "oauth2": {
+        "client_id": "676247450277-q2e639phaf1kqvronpkfdui403j67m68.apps.googleusercontent.com",
+        "scopes": ["https://www.googleapis.com/auth/documents.readonly"]
     }
 }

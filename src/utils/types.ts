@@ -8,6 +8,8 @@ export type MessageType =
     | "SELECTED_TEXT_RESPONSE" // Added for selected text response
     | "GET_DOCUMENT_CONTENT"
     | "GET_DOCUMENT_CONTENT_RELAY" // Added for relaying document content requests
+    | "GET_DOCUMENT_CONTENT_API" // New: fetch via Google Docs REST API
+    | "DOCUMENT_CONTENT_API_RESPONSE"
     | "DOCUMENT_CONTENT_RESPONSE"
     | "ADD_COMMENT"
     | "GENERATE_WRITING_SUGGESTION"

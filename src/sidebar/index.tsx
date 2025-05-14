@@ -9,6 +9,7 @@ import {
 } from "../utils/services";
 import { ChatMessage, WritingSuggestion } from "../utils/types";
 import { GoogleDocsAPI } from "../utils/google-docs-api";
+import { extractDocumentId, fetchDocumentContent } from "../utils/docs-api";
 
 // Component for a single chat message
 const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
@@ -333,38 +334,63 @@ const Sidebar: React.FC<{}> = () => {
                 // If still empty after second attempt, try a different approach
                 if (!documentContent || documentContent.length < 50) {
                     console.log(
-                        "Second attempt failed, trying through background script..."
+                        "Second attempt failed, trying through Google Docs REST API..."
                     );
-
-                    // Try getting content through background script as final fallback
                     try {
-                        const response = await new Promise<{
-                            content?: string;
-                            error?: string;
-                        }>((resolve) => {
-                            chrome.runtime.sendMessage(
-                                {
-                                    type: "GET_DOCUMENT_CONTENT_FROM_BACKGROUND",
-                                },
-                                (response) => resolve(response?.data || {})
-                            );
-                        });
-
-                        if (response.content) {
-                            documentContent = response.content;
-                            console.log(
-                                "Successfully retrieved content via background script"
-                            );
-                        } else if (response.error) {
+                        // Extract document ID from URL
+                        const docId = extractDocumentId();
+                        if (!docId) {
                             throw new Error(
-                                `Background script error: ${response.error}`
+                                "Could not extract document ID from URL"
                             );
                         }
-                    } catch (bgError) {
-                        console.error(
-                            "Background script approach failed:",
-                            bgError
+
+                        setSuggestions([
+                            {
+                                id: Date.now().toString(),
+                                originalText: "Connecting to document...",
+                                suggestion:
+                                    "Attempting to access via Google Docs API...",
+                                reason: "Using Google's official API for reliable access.",
+                                timestamp: Date.now(),
+                                isError: false,
+                            },
+                        ]);
+
+                        // Request content via the Google Docs API
+                        documentContent = await fetchDocumentContent(docId);
+                        console.log(
+                            "Successfully retrieved content via Google Docs API:",
+                            documentContent
+                                ? `${documentContent.length} chars`
+                                : "No content"
                         );
+                    } catch (apiError) {
+                        console.error(
+                            "Google Docs REST API approach failed:",
+                            apiError
+                        );
+
+                        // Last resort: try the relay approach through the background script
+                        try {
+                            console.log("Trying relay as final approach...");
+
+                            // Send relay request through background script
+                            chrome.runtime.sendMessage({
+                                type: "GET_DOCUMENT_CONTENT_RELAY",
+                                id: Date.now().toString(),
+                            });
+
+                            // Wait a short time for relay to complete
+                            await new Promise((resolve) =>
+                                setTimeout(resolve, 2000)
+                            );
+                        } catch (relayError) {
+                            console.error(
+                                "Relay approach also failed:",
+                                relayError
+                            );
+                        }
                     }
                 }
 
