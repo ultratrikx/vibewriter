@@ -62,13 +62,55 @@ function startDocumentMonitoring() {
     // Also perform our own check to ensure document is accessible
     let checkCount = 0;
     const maxChecks = 20;
+    let hasFoundContent = false;
 
+    // Try using MutationObserver to detect when document structure changes
+    try {
+        const docsContainer = document.querySelector(".docs-editor-container");
+        if (docsContainer) {
+            const observer = new MutationObserver((mutations) => {
+                if (hasFoundContent) return;
+
+                debugLog("Document mutation detected, checking for content");
+                try {
+                    const content =
+                        GoogleDocsAPI.getDocumentContent() ||
+                        GoogleDocsAPI.forceGetDocumentContent();
+                    if (content) {
+                        hasFoundContent = true;
+                        debugLog(
+                            `Document content found after DOM mutation: ${content.length} chars`
+                        );
+                        GoogleDocsAPI.stopDebugLogging();
+                        observer.disconnect();
+                    }
+                } catch (err) {
+                    debugLog("Error checking for content after mutation", err);
+                }
+            });
+
+            observer.observe(docsContainer, {
+                childList: true,
+                subtree: true,
+            });
+
+            debugLog("MutationObserver set up for document content");
+        }
+    } catch (err) {
+        debugLog("Error setting up MutationObserver", err);
+    }
+
+    // Also use interval checking as a backup method
     const checkInterval = setInterval(() => {
         checkCount++;
 
         try {
-            const content = GoogleDocsAPI.getDocumentContent();
+            // Try both regular and forced content retrieval
+            const content =
+                GoogleDocsAPI.getDocumentContent() ||
+                GoogleDocsAPI.forceGetDocumentContent();
             if (content) {
+                hasFoundContent = true;
                 debugLog(
                     `Document content monitoring: Content accessible (${content.length} chars)`
                 );
@@ -103,6 +145,23 @@ function addVibeWriteUI() {
         const sidebarContainer = document.createElement("div");
         sidebarContainer.className = "vibewrite-sidebar-container";
         sidebarContainer.id = "vibewrite-sidebar";
+
+        // Ensure the element has the base styles even if CSS hasn't loaded yet
+        sidebarContainer.style.position = "fixed";
+        sidebarContainer.style.top = "64px";
+        sidebarContainer.style.right = "0";
+        sidebarContainer.style.width = "350px";
+        sidebarContainer.style.height = "calc(100vh - 64px)";
+        sidebarContainer.style.backgroundColor = "white";
+        sidebarContainer.style.boxShadow = "-4px 0 8px rgba(0, 0, 0, 0.15)";
+        sidebarContainer.style.zIndex = "9999";
+        sidebarContainer.style.display = "flex";
+        sidebarContainer.style.flexDirection = "column";
+        sidebarContainer.style.transition = "transform 0.3s ease";
+        sidebarContainer.style.transform = "translateX(100%)";
+        sidebarContainer.style.borderLeft = "1px solid #dadce0";
+        sidebarContainer.style.overflow = "hidden";
+
         document.body.appendChild(sidebarContainer);
 
         debugLog("Sidebar container created and added to DOM", {
@@ -162,7 +221,12 @@ function addVibeWriteUI() {
             toggleSidebarButton.style.borderRadius = "4px";
             toggleSidebarButton.style.cursor = "pointer";
             toggleSidebarButton.style.marginRight = "10px";
-            toggleSidebarButton.addEventListener("click", toggleSidebar);
+            toggleSidebarButton.addEventListener("click", (e) => {
+                debugLog("VibeWrite button clicked");
+                e.preventDefault();
+                e.stopPropagation();
+                toggleSidebar();
+            });
 
             // Create analyze button
             const analyzeButton = document.createElement("button");
@@ -216,13 +280,31 @@ function toggleSidebar() {
 
     if (sidebar) {
         const isCurrentlyOpen = sidebar.classList.contains("open");
-        sidebar.classList.toggle("open");
-        debugLog(`Sidebar ${isCurrentlyOpen ? "closed" : "opened"}`);
 
-        // Force a redraw to ensure the sidebar appears
-        sidebar.style.display = "none";
-        sidebar.offsetHeight; // Force a reflow
-        sidebar.style.display = "flex";
+        // Log current state for debugging
+        debugLog("Sidebar state before toggle:", {
+            isOpen: isCurrentlyOpen,
+            classList: Array.from(sidebar.classList),
+            computedTransform: window.getComputedStyle(sidebar).transform,
+            display: window.getComputedStyle(sidebar).display,
+        });
+        sidebar.classList.toggle("open");
+
+        // Log state after toggle
+        debugLog("Sidebar state after toggle:", {
+            isOpen: sidebar.classList.contains("open"),
+            classList: Array.from(sidebar.classList),
+            computedTransform: window.getComputedStyle(sidebar).transform,
+        });
+
+        // Apply transform directly to ensure it works even if CSS is delayed
+        if (sidebar.classList.contains("open")) {
+            sidebar.style.transform = "translateX(0)";
+        } else {
+            sidebar.style.transform = "translateX(100%)";
+        }
+
+        debugLog(`Sidebar ${isCurrentlyOpen ? "closed" : "opened"}`);
 
         return true;
     } else {
@@ -552,14 +634,13 @@ function postMessageToSidebar(message: any) {
         debugLog("Found iframe inside sidebar container, posting message");
         sidebarIframeInContainer.contentWindow.postMessage(message, "*");
         return;
-    }
-
-    // Then try the sidebar container itself
-    const sidebarContainer =
-        document.querySelector<HTMLIFrameElement>("#vibewrite-sidebar");
-    if (sidebarContainer?.contentWindow) {
-        debugLog("Found sidebar container with contentWindow, posting message");
-        sidebarContainer.contentWindow.postMessage(message, "*");
+    } // Try the specific sidebar iframe by ID
+    const sidebarIframe = document.querySelector<HTMLIFrameElement>(
+        "#vibewrite-sidebar-iframe"
+    );
+    if (sidebarIframe?.contentWindow) {
+        debugLog("Found sidebar iframe by ID, posting message");
+        sidebarIframe.contentWindow.postMessage(message, "*");
         return;
     }
 

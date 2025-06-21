@@ -185,13 +185,31 @@ const OllamaStatusBar: React.FC = () => {
                     : "Checking connection..."}
             </p>
             <p style={{ margin: "0", fontSize: "11px", color: "#1F2937" }}>
-                Messages are processed on your computer using Ollama.
+                Messages are processed on your computer using Ollama.{" "}
                 {connectionStatus === "disconnected" && (
-                    <span style={{ color: "#ea4335", fontWeight: "bold" }}>
-                        {" "}
-                        Ollama connection failed. Please check that Ollama is
-                        running.
-                    </span>
+                    <div
+                        style={{
+                            color: "#ea4335",
+                            fontWeight: "bold",
+                            marginTop: "5px",
+                        }}
+                    >
+                        Ollama connection failed. Please ensure:
+                        <ul style={{ margin: "5px 0 0 20px", padding: 0 }}>
+                            <li>Ollama is running</li>
+                            <li>
+                                CORS is enabled by starting with:{" "}
+                                <code
+                                    style={{
+                                        background: "#f0f0f0",
+                                        padding: "2px 4px",
+                                    }}
+                                >
+                                    OLLAMA_ORIGINS=* ollama serve
+                                </code>
+                            </li>
+                        </ul>
+                    </div>
                 )}
             </p>
         </div>
@@ -559,8 +577,7 @@ const Sidebar: React.FC<{}> = () => {
         1. originalText - The exact text to improve (keep it brief, under 20 words)
         2. suggestion - Your suggested improvement
         3. reason - A brief explanation why this is better
-        
-        Here's the text to analyze:
+          Here's the text to analyze:
         ${documentContent.substring(0, 3000)}
       `;
             }
@@ -570,7 +587,12 @@ const Sidebar: React.FC<{}> = () => {
             );
 
             if (aiResponse.error) {
-                throw new Error(aiResponse.error);
+                const error = new Error(aiResponse.error);
+                if (aiResponse.helpText) {
+                    // Preserve the helpText for more informative error display
+                    (error as any).helpText = aiResponse.helpText;
+                }
+                throw error;
             }
 
             // Parse the JSON response
@@ -653,9 +675,7 @@ const Sidebar: React.FC<{}> = () => {
                 setSuggestions([]);
             }
         } catch (error: any) {
-            console.error("Failed to analyze document:", error);
-
-            // Create an error suggestion to show to the user
+            console.error("Failed to analyze document:", error); // Create an error suggestion to show to the user
             const errorSuggestion: WritingSuggestion = {
                 id: Date.now().toString(),
                 originalText: "Error analyzing document",
@@ -666,7 +686,8 @@ const Sidebar: React.FC<{}> = () => {
                     : "Check your API key and try again",
                 reason: error.message?.includes("document content")
                     ? "VibeWrite could not access the document content. Try refreshing the page and making sure you're in edit mode."
-                    : error.message ||
+                    : (error as any).helpText ||
+                      error.message ||
                       "An error occurred while analyzing your document",
                 timestamp: Date.now(),
                 isError: true,
@@ -792,15 +813,18 @@ const Sidebar: React.FC<{}> = () => {
         }
         
         Please provide helpful writing advice based on this context.
-      `;
-
-            // Generate AI response
+      `; // Generate AI response
             const aiResponse = await aiService.current.generateCompletion(
                 prompt
             );
 
             if (aiResponse.error) {
-                throw new Error(aiResponse.error);
+                const error = new Error(aiResponse.error);
+                if (aiResponse.helpText) {
+                    // Preserve the helpText for more informative error display
+                    (error as any).helpText = aiResponse.helpText;
+                }
+                throw error;
             }
 
             // Add the AI response to the chat

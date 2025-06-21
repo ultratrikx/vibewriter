@@ -74,8 +74,10 @@ export class GoogleDocsAPI {
     }
     /**
      * Retrieves the entire document content from Google Docs
-     */
-    static getDocumentContent(maxRetries = 3): string {
+     * @param maxRetries Number of retry attempts
+     * @param delayMs Delay between retries in milliseconds
+     * @returns Document content as string or empty string if not found
+     */ static getDocumentContent(maxRetries = 3): string {
         try {
             console.log("Attempting to retrieve document content...");
 
@@ -83,6 +85,28 @@ export class GoogleDocsAPI {
             if (!this.isInGoogleDocs()) {
                 console.error("Not in a Google Docs document");
                 return "";
+            }
+
+            // Try direct document access through Google Docs API if available
+            try {
+                if (
+                    typeof (window as any).googTernaryParent?.getDoc ===
+                    "function"
+                ) {
+                    const docContent =
+                        (window as any).googTernaryParent
+                            .getDoc()
+                            ?.getBody()
+                            ?.getText() || "";
+                    if (docContent) {
+                        console.log(
+                            "Retrieved document content via Google Docs internal API"
+                        );
+                        return docContent;
+                    }
+                }
+            } catch (e) {
+                console.log("Failed to access Google Docs API directly:", e);
             }
 
             // Get all text content from the document
@@ -104,11 +128,24 @@ export class GoogleDocsAPI {
                         `Trying alternative selectors (${maxRetries} retries left)`
                     );
 
-                    // Try alternative selectors for Google Docs content
+                    // Try MORE alternative selectors for Google Docs content - expanded list
                     const alternatives = [
+                        // Google Docs document content containers
                         ".kix-page-content-wrapper",
                         ".docs-texteventtarget-iframe",
                         ".docs-editor-container",
+                        ".kix-appview-editor",
+                        ".kix-canvas-tile-content",
+                        // Specific content elements
+                        ".goog-inline-block.kix-lineview-text-block",
+                        ".kix-lineview",
+                        ".kix-lineview-content",
+                        // Editable areas
+                        "[contenteditable='true']",
+                        ".docs-text-ui-cursor-blink",
+                        // Any iframe that might contain content
+                        "iframe.docs-texteventtarget-iframe",
+                        ".docs-text-ui-editor-window",
                     ];
 
                     for (const selector of alternatives) {
@@ -116,29 +153,96 @@ export class GoogleDocsAPI {
                         if (elements && elements.length > 0) {
                             console.log(
                                 `Found ${elements.length} elements with selector ${selector}`
-                            );
-
-                            // Try to get the content from these elements
+                            ); // Try to get the content from these elements
                             const content = Array.from(elements)
-                                .map((element) => element.textContent)
+                                .map((element) => {
+                                    // Check if it's an iframe and handle accordingly with better error handling
+                                    if (element instanceof HTMLIFrameElement) {
+                                        try {
+                                            // Try accessing contentDocument (may fail due to cross-origin)
+                                            if (element.contentDocument) {
+                                                return element.contentDocument
+                                                    .body.textContent;
+                                            }
+
+                                            // If iframe is same-origin but contentDocument not available yet
+                                            if (
+                                                !element.contentDocument &&
+                                                element.src &&
+                                                element.src.startsWith(
+                                                    window.location.origin
+                                                )
+                                            ) {
+                                                console.log(
+                                                    "Same-origin iframe found but content not ready"
+                                                );
+                                                // Will be picked up in next retry
+                                            }
+                                        } catch (e) {
+                                            // Cross-origin iframe, we can't access content directly
+                                            console.log(
+                                                "Cross-origin iframe access error:",
+                                                e
+                                            );
+                                        }
+                                    }
+                                    return element.textContent;
+                                })
                                 .filter(Boolean)
                                 .join("\n");
 
                             if (content) {
                                 console.log(
-                                    `Retrieved ${content.length} characters using alternative selector`
+                                    `Retrieved ${content.length} characters using alternative selector ${selector}`
                                 );
                                 return content;
                             }
                         }
+                    } // If alternatives didn't work, try accessing document directly
+                    try {
+                        const docText =
+                            document.body.innerText ||
+                            document.documentElement.innerText;
+                        if (docText && docText.trim().length > 0) {
+                            console.log(
+                                `Retrieved ${docText.length} characters from document body`
+                            );
+                            return docText;
+                        }
+                    } catch (e) {
+                        console.log("Error accessing document body text:", e);
                     }
 
-                    // If none of the alternatives worked, wait a bit and retry with original selector
-                    return new Promise<string>((resolve) => {
-                        setTimeout(() => {
-                            resolve(this.getDocumentContent(maxRetries - 1));
-                        }, 500);
-                    }) as unknown as string;
+                    // Try an alternative approach - look for text nodes in the document
+                    try {
+                        let textContent = "";
+                        const textWalker = document.createTreeWalker(
+                            document.body,
+                            NodeFilter.SHOW_TEXT,
+                            null
+                        );
+                        let n: Node | null;
+                        while ((n = textWalker.nextNode())) {
+                            if (n.textContent && n.textContent.trim()) {
+                                textContent += n.textContent + "\n";
+                            }
+                        }
+
+                        if (textContent && textContent.length > 100) {
+                            console.log(
+                                `Retrieved ${textContent.length} characters from text nodes`
+                            );
+                            return textContent;
+                        }
+                    } catch (e) {
+                        console.log("Error using TreeWalker:", e);
+                    }
+
+                    // If all alternatives failed, return empty and retry later
+                    console.log(
+                        `No content found with any method. Returning empty string.`
+                    );
+                    return "";
                 }
 
                 return "";

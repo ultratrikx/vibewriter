@@ -25,17 +25,22 @@
     top: 64px;
     /* Google Docs toolbar height */
     right: 0;
-    width: 350px; /* Increased width for better usability */
+    width: 350px;
+    /* Increased width for better usability */
     height: calc(100vh - 64px);
     background-color: white;
-    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.15); /* Stronger shadow for better visibility */
-    z-index: 9999; /* Higher z-index to ensure it's above Google Docs UI */
+    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.15);
+    /* Stronger shadow for better visibility */
+    z-index: 9999;
+    /* Higher z-index to ensure it's above Google Docs UI */
     display: flex;
     flex-direction: column;
     transition: transform 0.3s ease;
     transform: translateX(100%);
-    border-left: 1px solid #dadce0; /* Google-style border */
-    overflow: hidden; /* Prevent content from spilling out */
+    border-left: 1px solid #dadce0;
+    /* Google-style border */
+    overflow: hidden;
+    /* Prevent content from spilling out */
 }
 
 .vibewrite-sidebar-container.open {

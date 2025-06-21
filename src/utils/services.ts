@@ -1,10 +1,12 @@
 import axios from "axios";
 import { OpenAI } from "openai";
+import { validateOllamaModel } from "./ollama-helper";
 
 // Types
 export interface AIResponse {
     text: string;
     error?: string;
+    helpText?: string; // Additional help text for error troubleshooting
 }
 
 // AI Provider type
@@ -111,6 +113,31 @@ export class AIService {
                 `Requesting Ollama completion via background script, base URL: ${this.ollamaBaseUrl}`
             );
 
+            // First validate that the model actually exists to avoid 500 errors
+            try {
+                const validationResult = await validateOllamaModel(
+                    this.ollamaBaseUrl,
+                    this.modelName
+                );
+
+                if (!validationResult.valid) {
+                    console.error(
+                        "Ollama model validation failed:",
+                        validationResult.message
+                    );
+                    return {
+                        text: "",
+                        error: "Invalid Ollama model",
+                        helpText: validationResult.message,
+                    };
+                }
+            } catch (validationError) {
+                console.warn(
+                    "Failed to validate Ollama model (proceeding anyway):",
+                    validationError
+                );
+            }
+
             // Use the background script to make the API call to avoid CORS issues
             return new Promise((resolve) => {
                 chrome.runtime.sendMessage(
@@ -144,11 +171,34 @@ export class AIService {
                                 "Error from background script Ollama request:",
                                 response?.error
                             );
+
+                            // Format a more helpful error message
+                            let errorMsg =
+                                response?.error ||
+                                "Failed to get response from Ollama";
+                            let helpText = "";
+
+                            // Check for common error patterns
+                            if (
+                                errorMsg.includes("403") ||
+                                response?.solution
+                            ) {
+                                helpText =
+                                    response?.solution ||
+                                    "Access to Ollama server is forbidden (403 error). Make sure Ollama is running with proper permissions and CORS is enabled. Try: OLLAMA_ORIGINS=* ollama serve";
+                            } else if (
+                                errorMsg.includes("Failed to fetch") ||
+                                errorMsg.includes("NetworkError")
+                            ) {
+                                helpText =
+                                    "Connection failed. Make sure Ollama server is running at " +
+                                    this.ollamaBaseUrl;
+                            }
+
                             resolve({
                                 text: "",
-                                error:
-                                    response?.error ||
-                                    "Failed to get response from Ollama",
+                                error: errorMsg,
+                                helpText: helpText,
                             });
                         }
                     }
